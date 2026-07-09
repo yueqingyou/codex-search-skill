@@ -473,6 +473,96 @@ def _safe_error_message(error: Exception, max_chars: int = 300) -> str:
     return _truncate(text, max_chars)
 
 
+def _source_response(source: str, query: str, *, results: list | None = None,
+                     error: str | None = None) -> dict:
+    results = results or []
+    status = {
+        "query": query,
+        "source": source,
+        "configured": True,
+        "attempted": True,
+        "status": "error" if error else "ok",
+        "result_count": len(results),
+    }
+    if error:
+        status["error"] = _truncate(error, 300)
+    return {
+        "results": results,
+        "source_status": [status],
+    }
+
+
+def _source_not_configured_status(source: str, query: str) -> dict:
+    return {
+        "query": query,
+        "source": source,
+        "configured": False,
+        "attempted": False,
+        "status": "not_configured",
+        "result_count": 0,
+    }
+
+
+def _annotate_search_result(result: dict) -> dict:
+    """Mark ordinary search hits as candidates, not source-verified evidence."""
+    result.setdefault("retrieval_type", "search_candidate")
+    result.setdefault("evidence", {
+        "level": "candidate",
+        "source_page_fetched": False,
+    })
+    return result
+
+
+def _result_semantics(include_refs: bool = False) -> dict:
+    semantics = {
+        "results": (
+            "Search-provider candidate URLs and snippets. Important claims still "
+            "need source-page verification."
+        )
+    }
+    if include_refs:
+        semantics["refs"] = (
+            "Fetched source pages used only for bounded reference extraction; "
+            "fetch errors are reported per source_url."
+        )
+    return semantics
+
+
+def _summarize_source_status(source_status: list[dict]) -> dict:
+    requested = []
+    attempted = []
+    successful = []
+    failed = []
+    not_configured = []
+    for item in source_status:
+        source = item.get("source", "")
+        if source and source not in requested:
+            requested.append(source)
+        if item.get("attempted"):
+            if source and source not in attempted:
+                attempted.append(source)
+            if item.get("status") == "ok":
+                if source and source not in successful:
+                    successful.append(source)
+            elif item.get("status") == "error":
+                failed.append({
+                    "query": item.get("query", ""),
+                    "source": source,
+                    "error": item.get("error", ""),
+                })
+        elif item.get("status") == "not_configured" and source not in not_configured:
+            not_configured.append(source)
+
+    return {
+        "requested_sources": requested,
+        "attempted_sources": attempted,
+        "successful_sources": successful,
+        "not_configured_sources": not_configured,
+        "failed_source_runs": failed,
+        "all_attempted_sources_failed": bool(attempted and not successful),
+    }
+
+
 def _abstract_from_inverted_index(index: dict | None, max_chars: int = 1200) -> str:
     if not isinstance(index, dict):
         return ""
@@ -670,8 +760,9 @@ def search_grok(query: str, api_url: str, api_key: str, model: str = DEFAULT_GRO
             try:
                 content = _extract_text_from_openai_response(json.loads(raw))
             except json.JSONDecodeError:
-                print(f"[grok] error: non-JSON response: {raw[:200]}", file=sys.stderr)
-                return []
+                msg = f"non-JSON response: {raw[:200]}"
+                print(f"[grok] error: {msg}", file=sys.stderr)
+                return _source_response("grok", query, error=msg)
 
         parsed = _parse_grok_search_json(content)
         results = []
@@ -690,10 +781,11 @@ def search_grok(query: str, api_url: str, api_key: str, model: str = DEFAULT_GRO
                 "published_date": res.get("published_date", ""),
                 "source": "grok",
             })
-        return results
+        return _source_response("grok", query, results=results)
     except Exception as e:
-        print(f"[grok] error: {_safe_error_message(e)}", file=sys.stderr)
-        return []
+        msg = _safe_error_message(e)
+        print(f"[grok] error: {msg}", file=sys.stderr)
+        return _source_response("grok", query, error=msg)
 
 
 def _exa_start_published_date(freshness: str | None) -> str | None:
@@ -799,10 +891,11 @@ def search_exa(query: str, key: str, num: int = 5,
                 "published_date": res.get("publishedDate", ""),
                 "source": "exa",
             })
-        return results
+        return _source_response("exa", query, results=results)
     except Exception as e:
-        print(f"[exa] error: {_safe_error_message(e)}", file=sys.stderr)
-        return []
+        msg = _safe_error_message(e)
+        print(f"[exa] error: {msg}", file=sys.stderr)
+        return _source_response("exa", query, error=msg)
 
 
 @_throttled
@@ -839,10 +932,11 @@ def search_tavily(query: str, key: str, num: int = 5,
                 "published_date": res.get("published_date", ""),
                 "source": "tavily",
             })
-        return results
+        return _source_response("tavily", query, results=results)
     except Exception as e:
-        print(f"[tavily] error: {_safe_error_message(e)}", file=sys.stderr)
-        return []
+        msg = _safe_error_message(e)
+        print(f"[tavily] error: {msg}", file=sys.stderr)
+        return _source_response("tavily", query, error=msg)
 
 
 @_throttled
@@ -903,10 +997,11 @@ def search_openalex(query: str, key: str, num: int = 5,
                     "cited_by_count": res.get("cited_by_count"),
                 },
             })
-        return results
+        return _source_response("openalex", query, results=results)
     except Exception as e:
-        print(f"[openalex] error: {_safe_error_message(e)}", file=sys.stderr)
-        return []
+        msg = _safe_error_message(e)
+        print(f"[openalex] error: {msg}", file=sys.stderr)
+        return _source_response("openalex", query, error=msg)
 
 # ---------------------------------------------------------------------------
 # Dedup
@@ -1114,9 +1209,10 @@ def _run_exa_research_synthesis(query: str, queries: list[str], context: list[di
 def execute_search(query: str, keys: dict, num: int,
                    freshness: str = None,
                    sources: set = None,
-                   intent: str | None = None) -> list:
+                   intent: str | None = None) -> dict:
     """Execute quality-first search for a single query."""
     all_results = []
+    source_status = []
 
     def _want(name: str) -> bool:
         return sources is None or name in sources
@@ -1134,7 +1230,10 @@ def execute_search(query: str, keys: dict, num: int,
         return name in keys
 
     def _submit_source(pool, futures: dict, name: str) -> bool:
-        if not _want(name) or not _source_available(name):
+        if not _want(name):
+            return False
+        if not _source_available(name):
+            source_status.append(_source_not_configured_status(name, query))
             return False
         if name == "grok":
             futures[pool.submit(
@@ -1175,9 +1274,22 @@ def execute_search(query: str, keys: dict, num: int,
             try:
                 res = fut.result()
             except Exception as e:
-                print(f"[{name}] error: {_safe_error_message(e)}", file=sys.stderr)
+                msg = _safe_error_message(e)
+                print(f"[{name}] error: {msg}", file=sys.stderr)
+                source_status.append({
+                    "query": query,
+                    "source": name,
+                    "configured": True,
+                    "attempted": True,
+                    "status": "error",
+                    "result_count": 0,
+                    "error": msg,
+                })
                 continue
-            if isinstance(res, dict):
+            if isinstance(res, dict) and "source_status" in res:
+                source_status.extend(res.get("source_status") or [])
+                all_results.extend(res.get("results", []))
+            elif isinstance(res, dict):
                 all_results.extend(res.get("results", []))
             else:
                 all_results.extend(res)
@@ -1195,7 +1307,10 @@ def execute_search(query: str, keys: dict, num: int,
         print('{"warning": "No configured API keys found for search sources"}',
               file=sys.stderr)
 
-    return all_results
+    return {
+        "results": all_results,
+        "source_status": source_status,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1233,12 +1348,26 @@ def _run_extract_refs(urls: list) -> list:
                 data = ft.fetch_web_page(url)
             return {
                 "source_url": url,
+                "retrieval_type": "source_page_fetch",
+                "evidence": {
+                    "level": "fetched_source",
+                    "source_page_fetched": True,
+                },
                 "refs": data.get("refs", []),
                 "ref_count": len(data.get("refs", [])),
             }
         except Exception as e:
-            return {"source_url": url, "refs": [], "ref_count": 0,
-                    "error": str(e)}
+            return {
+                "source_url": url,
+                "retrieval_type": "source_page_fetch",
+                "evidence": {
+                    "level": "fetch_error",
+                    "source_page_fetched": False,
+                },
+                "refs": [],
+                "ref_count": 0,
+                "error": str(e),
+            }
 
     # Parallel fetch with bounded concurrency
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
@@ -1291,6 +1420,7 @@ def main():
             "queries": [],
             "count": 0,
             "results": [],
+            "result_semantics": _result_semantics(include_refs=True),
             "refs": _run_extract_refs(args.extract_refs_urls),
         }
         print(json.dumps(output, ensure_ascii=False, indent=2))
@@ -1311,13 +1441,16 @@ def main():
             ap.error(f"Unknown source(s): {', '.join(sorted(unknown_sources))}. Allowed: grok, exa, tavily, openalex")
 
     all_results = []
+    source_status = []
 
     if len(queries) == 1:
-        all_results = execute_search(
+        search_output = execute_search(
             queries[0], keys, args.num,
             freshness=args.freshness,
             sources=source_filter,
             intent=args.intent)
+        all_results = search_output["results"]
+        source_status.extend(search_output.get("source_status", []))
     else:
         max_workers = min(len(queries), 3)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -1329,10 +1462,14 @@ def main():
                 for q in queries
             }
             for fut in concurrent.futures.as_completed(futures):
-                all_results.extend(fut.result())
+                search_output = fut.result()
+                all_results.extend(search_output.get("results", []))
+                source_status.extend(search_output.get("source_status", []))
 
     # Dedup
     deduped = dedup(all_results)
+    for r in deduped:
+        _annotate_search_result(r)
 
     # Score and sort if intent is specified
     if args.intent:
@@ -1352,6 +1489,9 @@ def main():
         "intent": args.intent,
         "queries": queries,
         "count": len(deduped),
+        "result_semantics": _result_semantics(include_refs=args.extract_refs or bool(args.extract_refs_urls)),
+        "source_status": source_status,
+        "source_summary": _summarize_source_status(source_status),
         "results": deduped,
     }
     if args.freshness:

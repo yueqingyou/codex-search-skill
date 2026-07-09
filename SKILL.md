@@ -24,6 +24,7 @@ Use this as the default search workflow. It replaces direct raw web search for s
 - MCP, GitHub, Notion, literature, database, and other domain connectors remain appropriate when they provide native structured access to the target system.
 - External search tools remain appropriate as supplemental sources or when explicitly requested, but merge and verify their results through this skill's source-ranking and synthesis workflow when practical.
 - Grok-generated URLs are candidate leads, not final evidence. Important claims need source-level verification.
+- Ordinary `scripts/search.py` results are candidate URLs and snippets. Use `source_status` / `source_summary` to distinguish provider failures from empty results, and use fetched pages, official documents, or domain APIs before treating important claims as verified.
 
 ## Scripts
 
@@ -87,7 +88,8 @@ Pipeline:
 5. Merge and rank: rely on `scripts/search.py` URL deduplication, source-priority tie breaking, intent-aware scoring, domain authority, freshness, and `--domain-boost` when needed.
 6. Add synthesis carefully: run second-stage research synthesis only after ordinary retrieval for comparison/exploratory/status/news queries with judgment, causal, or multi-query signals.
 7. Trace and extract: use `--extract-refs`, `fetch_thread.py`, and `content_extract.py` when first-hop results point to issues, PRs, forum threads, papers, PDFs, or anti-bot pages.
-8. Verify and synthesize: verify important claims against source pages or official documents, then synthesize by topic and reliability rather than by provider.
+8. Interpret output semantics: `results` are `search_candidate` entries with `evidence.level=candidate`; fetched `refs` entries report source-page fetch status.
+9. Verify and synthesize: verify important claims against source pages or official documents, then synthesize by topic and reliability rather than by provider.
 
 Recommended intent settings:
 

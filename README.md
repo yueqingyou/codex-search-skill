@@ -8,6 +8,7 @@ Single Codex skill for web-search-first workflows. It replaces raw web search fo
 - Uses source priority `Grok > Exa > Tavily > OpenAlex`.
 - Uses one quality-first pipeline that calls every configured source unless `--source` narrows the source set.
 - Scores, deduplicates, and ranks results with intent-aware weighting.
+- Labels ordinary search hits as candidate URLs and reports provider status in structured output.
 - Supports GitHub/forum/thread fetching and citation-chain extraction.
 - Falls back to MinerU for difficult web pages, PDFs, Office documents, and OCR-heavy content.
 
@@ -41,6 +42,15 @@ For MinerU, copy `.env.example` to:
 ```
 
 Then fill `MINERU_TOKEN`.
+
+## Output Semantics
+
+`scripts/search.py` output distinguishes discovery from verification:
+
+- `results` are search-provider candidate URLs and snippets. They include `retrieval_type: "search_candidate"` and `evidence.level: "candidate"`.
+- `refs`, when requested through `--extract-refs` or `--extract-refs-urls`, are fetched source pages used for bounded reference extraction. Each item reports whether the source page was fetched or failed.
+- `source_status` records per-query, per-provider configuration, attempt status, result count, and sanitized errors.
+- `source_summary` aggregates attempted, successful, missing, and failed provider runs so network or credential failures are not mistaken for empty search results.
 
 ## Examples
 

@@ -22,6 +22,7 @@ Rationale:
 - Keep intent classification before retrieval: `factual`, `status`, `comparison`, `tutorial`, `exploratory`, `news`, and `resource`.
 - Keep query bundles through `--queries`, especially for comparisons, Chinese technical topics, and broad exploratory tasks.
 - Keep a stable `results` contract with `title`, `url`, `snippet`, `published_date`, `source`, optional `meta`, and optional `score`.
+- Keep generic output semantics: ordinary hits are marked as `search_candidate` with candidate-level evidence, fetched `refs` entries report source-page fetch status, and `source_status` / `source_summary` expose provider failures without changing ranking.
 - Keep URL deduplication, source labels, freshness scoring, authority scoring, and `--domain-boost`.
 - Keep Exa as a single semantic retrieval lane with highlights so ranking has useful snippet text.
 - Keep second-stage research synthesis as an additive block after normal retrieval, not a replacement for `results`.
@@ -37,4 +38,5 @@ Rationale:
 - Placeholder features that are not callable from `scripts/search.py`.
 - Hiding configured sources behind automatic source gating. Source priority affects ranking, not whether a configured source is attempted.
 - Replacing source verification with Grok synthesis. Grok output is useful for leads but not final evidence by itself.
+- Task-specific retrieval modes such as person/entity attribution. The skill stays generic; evidence metadata should help downstream workflows make their own attribution decisions.
 - Adding provider caches, SSRF policy layers, or host-specific runtime integration; this skill is a local script package, not a gateway runtime.
