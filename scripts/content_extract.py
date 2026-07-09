@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""content-extract: deterministic MinerU-only extractor for OpenClaw.
+"""content_extract: deterministic MinerU-only extractor for agent workflows.
 
 Why this exists:
-- OpenClaw's `web_fetch` is a tool, not available inside scripts.
+- Agent-native fetch/search tools are not available inside this script.
 - This script provides a stable "fallback engine" that the agent can call
-  after probing with `web_fetch`.
+  after probing with the current agent's web fetch, browser, or search tool.
 
-It wraps mineru-extract's MCP-aligned script and returns a compact JSON contract.
+It wraps the bundled MinerU script and returns a compact JSON contract.
 
 Usage:
   python3 scripts/content_extract.py --url <URL> [--model MinerU-HTML]
@@ -45,19 +45,19 @@ def _find_mineru_wrapper() -> str:
         return v
 
     here = pathlib.Path(__file__).resolve().parent
-    # 2. Monorepo sibling: ../mineru-extract/scripts/mineru_parse_documents.py
-    candidate = here.parent.parent / "mineru-extract" / "scripts" / "mineru_parse_documents.py"
+    # 2. Same single-skill scripts directory.
+    candidate = here / "mineru_parse_documents.py"
     if candidate.exists():
         return str(candidate)
 
-    # 3. OpenClaw workspace default
-    default = pathlib.Path.home() / ".openclaw" / "workspace" / "skills" / "mineru-extract" / "scripts" / "mineru_parse_documents.py"
-    if default.exists():
-        return str(default)
+    # 3. Codex installed single-skill default.
+    codex_default = pathlib.Path.home() / ".codex" / "skills" / "web-search" / "scripts" / "mineru_parse_documents.py"
+    if codex_default.exists():
+        return str(codex_default)
 
     raise FileNotFoundError(
         "Cannot find mineru_parse_documents.py. "
-        "Set MINERU_WRAPPER_PATH env or install mineru-extract skill as a sibling directory."
+        "Set MINERU_WRAPPER_PATH env or install the web-search skill."
     )
 
 
@@ -155,7 +155,7 @@ def main() -> int:
             "cache_key": item.get("cache_key"),
         },
         "sources": sources,
-        "notes": ["mcp-aligned: mineru_parse_documents"],
+        "notes": ["mineru_parse_documents"],
     }
     sys.stdout.write(json.dumps(out, ensure_ascii=False))
     return 0

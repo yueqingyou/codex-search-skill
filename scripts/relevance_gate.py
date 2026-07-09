@@ -19,55 +19,168 @@ Output JSON:
 
 import json
 import os
+import re
 import sys
 import argparse
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 
+DEFAULT_GROK_MODEL = "grok-4.5"
+
+
+def _safe_error_message(error: Exception, max_chars: int = 300) -> str:
+    """Render LLM provider errors without leaking tokens."""
+    text = str(error)
+    text = re.sub(r"(?i)(api_key=)[^&\\s)]+", r"\1<redacted>", text)
+    text = re.sub(r"(?i)(authorization['\"]?\\s*[:=]\\s*['\"]?bearer\\s+)[^'\"\\s,)}]+", r"\1<redacted>", text)
+    text = re.sub(r"(?i)(bearer\\s+)[a-z0-9._\\-]+", r"\1<redacted>", text)
+    return text[:max_chars].rstrip()
+
+
 # ---------------------------------------------------------------------------
-# Credentials loader (reuse search-layer pattern)
+# Credentials loader (reuse search script pattern)
 # ---------------------------------------------------------------------------
 def _load_creds() -> dict:
     keys = {}
-    cred_path = Path.home() / ".openclaw" / "credentials" / "search.json"
+    cred_path = Path.home() / ".codex" / "credentials" / "search.json"
     try:
         cred = json.loads(cred_path.read_text())
         if grok := cred.get("grok"):
             if isinstance(grok, dict):
-                keys["grok_url"] = grok.get("apiUrl", "")
-                keys["grok_key"] = grok.get("apiKey", "")
-                keys["grok_model"] = grok.get("model", "grok-4.1-fast")
+                keys["grok_url"] = (
+                    grok.get("apiUrl")
+                    or grok.get("api_url")
+                    or grok.get("baseUrl")
+                    or grok.get("base_url")
+                    or ""
+                )
+                keys["grok_key"] = grok.get("apiKey") or grok.get("api_key") or ""
+                keys["grok_model"] = (
+                    grok.get("model")
+                    or grok.get("model_id")
+                    or grok.get("search_model_id")
+                    or DEFAULT_GROK_MODEL
+                )
+                keys["grok_api_format"] = (
+                    grok.get("apiFormat")
+                    or grok.get("api_format")
+                    or grok.get("endpoint")
+                    or "responses"
+                )
     except (json.JSONDecodeError, FileNotFoundError):
         pass
     # Env var overrides
     for env, key in [("GROK_API_KEY", "grok_key"), ("GROK_API_URL", "grok_url"),
-                     ("GROK_MODEL", "grok_model")]:
+                     ("GROK_MODEL", "grok_model"), ("GROK_API_FORMAT", "grok_api_format")]:
         if v := os.environ.get(env):
             keys[key] = v
+    if "grok_key" not in keys and (v := os.environ.get("AI_API_KEY")):
+        keys["grok_key"] = v
+    if "grok_url" not in keys and (v := os.environ.get("AI_API_URL")):
+        keys["grok_url"] = v
+    if "grok_model" not in keys and (v := (os.environ.get("AI_SEARCH_MODEL_ID") or os.environ.get("AI_MODEL_ID"))):
+        keys["grok_model"] = v
+    if "grok_api_format" not in keys and (v := os.environ.get("AI_API_FORMAT")):
+        keys["grok_api_format"] = v
     return keys
 
 
 # ---------------------------------------------------------------------------
 # LLM call
 # ---------------------------------------------------------------------------
+def _normalize_openai_api_format(value: str | None) -> str:
+    text = (value or "responses").strip().lower().replace("-", "_")
+    if text in {"chat", "chat_completion", "chat_completions"}:
+        return "chat_completions"
+    return "responses"
+
+
+def _resolve_openai_endpoint(api_url: str, api_format: str) -> str:
+    parsed = urlparse(api_url.rstrip("/"))
+    path = parsed.path.rstrip("/")
+    target = "/chat/completions" if api_format == "chat_completions" else "/responses"
+    if path.endswith(target):
+        return urlunparse(parsed)
+    return urlunparse(parsed._replace(path=f"{path}{target}" if path else target))
+
+
+def _extract_text_from_response(data: dict) -> str:
+    if isinstance(data.get("output_text"), str):
+        return data["output_text"]
+    parts = []
+    for item in data.get("output") or []:
+        if not isinstance(item, dict):
+            continue
+        for content in item.get("content") or []:
+            if isinstance(content, dict) and isinstance(content.get("text"), str):
+                parts.append(content["text"])
+    if parts:
+        return "".join(parts)
+    choices = data.get("choices") or []
+    if choices:
+        return (choices[0].get("message") or {}).get("content") or choices[0].get("text") or ""
+    return ""
+
+
+def _extract_text_from_sse(raw: str) -> str:
+    parts = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line.startswith("data:"):
+            continue
+        chunk = line[5:].strip()
+        if chunk == "[DONE]":
+            break
+        try:
+            data = json.loads(chunk)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data.get("delta"), str):
+            parts.append(data["delta"])
+            continue
+        if data.get("type") == "response.output_text.delta" and isinstance(data.get("delta"), str):
+            parts.append(data["delta"])
+            continue
+        choice = (data.get("choices") or [{}])[0]
+        delta = choice.get("delta") or choice.get("message") or {}
+        if text := (delta.get("content") or choice.get("text")):
+            parts.append(text)
+    return "".join(parts)
+
+
 def _call_llm(prompt: str, creds: dict) -> str:
-    """Call Grok (or compatible OpenAI API) and return response text."""
-    url = creds.get("grok_url", "").rstrip("/") + "/chat/completions"
+    """Call Grok through an OpenAI-compatible API and return response text."""
     api_key = creds.get("grok_key", "")
-    model = creds.get("grok_model", "grok-4.1-fast")
+    api_url = creds.get("grok_url", "")
+    model = creds.get("grok_model", DEFAULT_GROK_MODEL)
+    api_format = _normalize_openai_api_format(creds.get("grok_api_format", "responses"))
+    url = _resolve_openai_endpoint(api_url, api_format)
 
     if not api_key:
         raise ValueError("No LLM API key configured (grok_key missing)")
+    if not api_url or api_url.lower().startswith("todo_"):
+        raise ValueError("No LLM API URL configured (grok_url missing)")
 
-    payload = json.dumps({
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.1,
-        "max_tokens": 1024,
-        "stream": False,
-    }).encode()
+    if api_format == "chat_completions":
+        payload_obj = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.1,
+            "max_tokens": 1024,
+            "stream": False,
+        }
+    else:
+        payload_obj = {
+            "model": model,
+            "input": prompt,
+            "temperature": 0.1,
+            "max_output_tokens": 1024,
+            "stream": False,
+        }
+    payload = json.dumps(payload_obj).encode()
 
     req = Request(url, data=payload, method="POST", headers={
         "Authorization": f"Bearer {api_key}",
@@ -79,32 +192,14 @@ def _call_llm(prompt: str, creds: dict) -> str:
         with urlopen(req, timeout=30) as resp:
             raw = resp.read().decode()
 
-        # Handle SSE streaming response (server ignores stream:false)
         if raw.startswith("data:"):
-            content_parts = []
-            for line in raw.splitlines():
-                line = line.strip()
-                if not line.startswith("data:"):
-                    continue
-                chunk = line[5:].strip()
-                if chunk == "[DONE]":
-                    break
-                try:
-                    obj = json.loads(chunk)
-                    delta = obj["choices"][0].get("delta", {})
-                    if text := delta.get("content"):
-                        content_parts.append(text)
-                except (json.JSONDecodeError, KeyError, IndexError):
-                    continue
-            return "".join(content_parts)
+            return _extract_text_from_sse(raw)
 
-        # Standard non-streaming response
-        data = json.loads(raw)
-        return data["choices"][0]["message"]["content"]
+        return _extract_text_from_response(json.loads(raw))
 
     except HTTPError as e:
         body = e.read().decode() if e.fp else ""
-        raise RuntimeError(f"LLM API error {e.code}: {body[:200]}")
+        raise RuntimeError(f"LLM API error {e.code}: {_safe_error_message(Exception(body), 200)}")
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +271,7 @@ def score_candidates(
         raw = _call_llm(prompt, creds)
     except Exception as e:
         # On LLM failure, return all candidates unscored (fail open)
-        sys.stderr.write(f"[relevance_gate] LLM call failed: {e}, returning all candidates\n")
+        sys.stderr.write(f"[relevance_gate] LLM call failed: {_safe_error_message(e)}, returning all candidates\n")
         return [dict(c, score=0.5, reason="LLM unavailable") for c in candidates]
 
     # Parse JSON response

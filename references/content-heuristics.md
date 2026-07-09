@@ -42,4 +42,4 @@ If MinerU fails to fetch protected pages:
 - Ask for a mirror URL, OR
 - Use browser relay to export HTML, then add "upload HTML then parse" flow.
 
-(Upload flow is not implemented yet in OpenClaw A-route.)
+(Upload flow is not implemented yet in this local script route.)

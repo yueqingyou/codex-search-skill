@@ -123,7 +123,7 @@ def track(
     while queue:
         url, depth, score, reason = queue.pop(0)
 
-        # Skip if already visited or too deep
+        # Skip if already visited or beyond the configured depth limit.
         canon = url.rstrip("/")
         if canon in visited or depth > max_depth:
             continue

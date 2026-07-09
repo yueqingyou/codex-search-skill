@@ -4,7 +4,7 @@
 Primary use: submit a URL (including HTML pages) to MinerU, poll until done,
 download the result zip, and extract Markdown.
 
-Designed to be called from OpenClaw skills via `exec`.
+Designed to be called from agent skills via `exec`.
 
 Env (load order):
 - process env
@@ -16,7 +16,8 @@ Required:
 
 Optional:
 - MINERU_API_BASE (default: https://mineru.net)
-- OPENCLAW_WORKSPACE: workspace root for output (default: ~/.openclaw/workspace)
+- MINERU_WORKSPACE / CODEX_WORKSPACE / AGENT_WORKSPACE:
+  workspace root for output (default: ~/.codex/workspace)
 """
 
 from __future__ import annotations
@@ -55,9 +56,14 @@ def _bootstrap_env() -> None:
 
 
 def _default_workspace() -> pathlib.Path:
-    if v := os.environ.get("OPENCLAW_WORKSPACE"):
-        return pathlib.Path(v)
-    return pathlib.Path.home() / ".openclaw" / "workspace"
+    for env_name in (
+        "MINERU_WORKSPACE",
+        "CODEX_WORKSPACE",
+        "AGENT_WORKSPACE",
+    ):
+        if v := os.environ.get(env_name):
+            return pathlib.Path(v)
+    return pathlib.Path.home() / ".codex" / "workspace"
 
 
 def _http_json(method: str, url: str, *, headers: dict[str, str] | None = None, payload: dict | None = None, timeout: int = 60) -> dict:

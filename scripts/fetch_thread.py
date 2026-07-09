@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-fetch-thread: Deep content fetcher for threaded discussions.
+fetch-thread: Full content fetcher for threaded discussions.
 
 Fetches a URL's full discussion thread + extracts structured references.
 GitHub-optimized (API for issues/PRs/discussions), with generic web fallback.
