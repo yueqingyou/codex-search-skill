@@ -1,11 +1,21 @@
 # Configuration
 
+## Path Resolution
+
+This skill uses `CODEX_HOME` for installed files, credentials, virtualenvs, and workspace output. If `CODEX_HOME` is unset, use Codex's usual default:
+
+```bash
+export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+```
+
+For non-default Linux server installs, export the same `CODEX_HOME` value in the shell or service environment that starts Codex.
+
 ## Credential Files
 
 Search credentials:
 
 ```text
-~/.codex/credentials/search.json
+$CODEX_HOME/credentials/search.json
 ```
 
 Example:
@@ -32,7 +42,7 @@ Example:
 MinerU credentials:
 
 ```text
-~/.codex/skills/web-search/.env
+$CODEX_HOME/skills/web-search/.env
 ```
 
 Example:
@@ -40,7 +50,8 @@ Example:
 ```bash
 MINERU_TOKEN=TODO_MINERU_TOKEN
 MINERU_API_BASE=https://mineru.net
-MINERU_WORKSPACE=/Users/yuesir/.codex/workspace
+# Optional. If unset, MinerU output uses $CODEX_HOME/workspace.
+MINERU_WORKSPACE=$CODEX_HOME/workspace
 ```
 
 ## API Key Links
@@ -76,6 +87,14 @@ Environment aliases compatible with common AI search MCP setups are also accepte
 Recommended venv:
 
 ```bash
-python3 -m venv ~/.codex/venvs/web-search-skill
-~/.codex/venvs/web-search-skill/bin/python -m pip install requests trafilatura beautifulsoup4 lxml
+export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+python3 -m venv "$CODEX_HOME/venvs/web-search-skill"
+"$CODEX_HOME/venvs/web-search-skill/bin/python" -m pip install requests trafilatura beautifulsoup4 lxml
 ```
+
+The search script checks credentials in this order:
+
+- `WEB_SEARCH_CREDENTIALS`
+- `CODEX_SEARCH_CREDENTIALS`
+- `$CODEX_HOME/credentials/search.json`
+- `./credentials/search.json` from the current working directory

@@ -29,9 +29,10 @@ Use this as the default search workflow. It replaces direct raw web search for s
 ## Scripts
 
 Run scripts from the skill root or use absolute paths after installation.
+Commands assume `CODEX_HOME` is exported. If it is unset, set it before running the examples; README documents the default.
 
 ```bash
-~/.codex/venvs/web-search-skill/bin/python ~/.codex/skills/web-search/scripts/search.py "query" --intent exploratory --num 5
+"$CODEX_HOME/venvs/web-search-skill/bin/python" "$CODEX_HOME/skills/web-search/scripts/search.py" "query" --intent exploratory --num 5
 ```
 
 Available scripts:
@@ -49,7 +50,7 @@ Available scripts:
 Primary search credentials file:
 
 ```text
-~/.codex/credentials/search.json
+$CODEX_HOME/credentials/search.json
 ```
 
 Environment overrides:
@@ -72,7 +73,7 @@ MinerU token lives in the skill root `.env` or environment:
 ```bash
 MINERU_TOKEN=...
 MINERU_API_BASE=https://mineru.net
-MINERU_WORKSPACE=/Users/yuesir/.codex/workspace
+MINERU_WORKSPACE=$CODEX_HOME/workspace
 ```
 
 For setup details and API key links, read `references/configuration.md`.
@@ -108,28 +109,28 @@ Recommended intent settings:
 Multi-source search:
 
 ```bash
-~/.codex/venvs/web-search-skill/bin/python ~/.codex/skills/web-search/scripts/search.py \
+"$CODEX_HOME/venvs/web-search-skill/bin/python" "$CODEX_HOME/skills/web-search/scripts/search.py" \
   "RAG framework comparison" --intent exploratory --num 5
 ```
 
 Fresh search:
 
 ```bash
-~/.codex/venvs/web-search-skill/bin/python ~/.codex/skills/web-search/scripts/search.py \
+"$CODEX_HOME/venvs/web-search-skill/bin/python" "$CODEX_HOME/skills/web-search/scripts/search.py" \
   "Deno latest release" --intent status --freshness pw --num 5
 ```
 
 Single-source test:
 
 ```bash
-~/.codex/venvs/web-search-skill/bin/python ~/.codex/skills/web-search/scripts/search.py \
+"$CODEX_HOME/venvs/web-search-skill/bin/python" "$CODEX_HOME/skills/web-search/scripts/search.py" \
   "OpenAI latest news" --source grok --num 5
 ```
 
 Explicit multi-source test:
 
 ```bash
-~/.codex/venvs/web-search-skill/bin/python ~/.codex/skills/web-search/scripts/search.py \
+"$CODEX_HOME/venvs/web-search-skill/bin/python" "$CODEX_HOME/skills/web-search/scripts/search.py" \
   "retrieval augmented generation evaluation" \
   --source grok,exa,tavily,openalex --num 3
 ```
@@ -137,35 +138,35 @@ Explicit multi-source test:
 Exa-only retrieval:
 
 ```bash
-~/.codex/venvs/web-search-skill/bin/python ~/.codex/skills/web-search/scripts/search.py \
+"$CODEX_HOME/venvs/web-search-skill/bin/python" "$CODEX_HOME/skills/web-search/scripts/search.py" \
   "official Model Context Protocol documentation" --source exa --intent resource --num 5
 ```
 
 Citation tracking:
 
 ```bash
-~/.codex/venvs/web-search-skill/bin/python ~/.codex/skills/web-search/scripts/search.py \
+"$CODEX_HOME/venvs/web-search-skill/bin/python" "$CODEX_HOME/skills/web-search/scripts/search.py" \
   "GitHub issue root cause analysis" --intent status --extract-refs
 ```
 
 Fetch a full thread:
 
 ```bash
-~/.codex/venvs/web-search-skill/bin/python ~/.codex/skills/web-search/scripts/fetch_thread.py \
+"$CODEX_HOME/venvs/web-search-skill/bin/python" "$CODEX_HOME/skills/web-search/scripts/fetch_thread.py" \
   "https://github.com/owner/repo/issues/123" --format markdown
 ```
 
 Extract web content:
 
 ```bash
-~/.codex/venvs/web-search-skill/bin/python ~/.codex/skills/web-search/scripts/content_extract.py \
+"$CODEX_HOME/venvs/web-search-skill/bin/python" "$CODEX_HOME/skills/web-search/scripts/content_extract.py" \
   --url "https://mp.weixin.qq.com/s/example" --model MinerU-HTML
 ```
 
 Parse a document with MinerU:
 
 ```bash
-~/.codex/venvs/web-search-skill/bin/python ~/.codex/skills/web-search/scripts/mineru_parse_documents.py \
+"$CODEX_HOME/venvs/web-search-skill/bin/python" "$CODEX_HOME/skills/web-search/scripts/mineru_parse_documents.py" \
   --file-sources "https://example.com/paper.pdf" --model-version pipeline --emit-markdown --max-chars 20000
 ```
 

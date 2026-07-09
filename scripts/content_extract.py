@@ -42,7 +42,9 @@ def _find_mineru_wrapper() -> str:
     """Locate mineru_parse_documents.py relative to this script or via env."""
     # 1. Env override
     if v := os.environ.get("MINERU_WRAPPER_PATH"):
-        return v
+        codex_home = os.environ.get("CODEX_HOME") or "~/.codex"
+        v = v.replace("${CODEX_HOME}", codex_home).replace("$CODEX_HOME", codex_home)
+        return os.path.expanduser(os.path.expandvars(v))
 
     here = pathlib.Path(__file__).resolve().parent
     # 2. Same single-skill scripts directory.
@@ -51,7 +53,11 @@ def _find_mineru_wrapper() -> str:
         return str(candidate)
 
     # 3. Codex installed single-skill default.
-    codex_default = pathlib.Path.home() / ".codex" / "skills" / "web-search" / "scripts" / "mineru_parse_documents.py"
+    codex_home_value = os.environ.get("CODEX_HOME") or "~/.codex"
+    codex_home = pathlib.Path(os.path.expanduser(os.path.expandvars(
+        codex_home_value
+    )))
+    codex_default = codex_home / "skills" / "web-search" / "scripts" / "mineru_parse_documents.py"
     if codex_default.exists():
         return str(codex_default)
 

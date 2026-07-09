@@ -70,9 +70,14 @@ _configure_stdio_utf8()
 try:
     import requests
 except ImportError:
-    print('{"error": "requests library not installed. Run: pip install requests"}',
-          file=sys.stderr)
-    sys.exit(1)
+    requests = None
+
+
+def _require_requests() -> None:
+    if requests is None:
+        print('{"error": "requests library not installed. Run: pip install requests"}',
+              file=sys.stderr)
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -311,6 +316,16 @@ def _is_configured_secret(value) -> bool:
     return not any(lower.startswith(prefix) for prefix in placeholder_prefixes)
 
 
+def _expand_path(value: str) -> str:
+    codex_home = os.environ.get("CODEX_HOME") or "~/.codex"
+    value = value.replace("${CODEX_HOME}", codex_home).replace("$CODEX_HOME", codex_home)
+    return os.path.expanduser(os.path.expandvars(value))
+
+
+def _codex_home() -> str:
+    return _expand_path(os.environ.get("CODEX_HOME") or "~/.codex")
+
+
 def _find_credentials() -> str | None:
     """Find search.json credentials file."""
     candidates = []
@@ -319,10 +334,10 @@ def _find_credentials() -> str | None:
         "CODEX_SEARCH_CREDENTIALS",
     ):
         if v := os.environ.get(env_name):
-            candidates.append(os.path.expanduser(v))
+            candidates.append(_expand_path(v))
 
     candidates.extend([
-        os.path.expanduser("~/.codex/credentials/search.json"),
+        os.path.join(_codex_home(), "credentials", "search.json"),
         os.path.join(os.getcwd(), "credentials/search.json"),
     ])
     for c in candidates:
@@ -1427,6 +1442,8 @@ def main():
         return
     else:
         ap.error("Provide a query positional argument, --queries, or --extract-refs-urls")
+
+    _require_requests()
 
     keys = get_keys()
     boost_domains = set()

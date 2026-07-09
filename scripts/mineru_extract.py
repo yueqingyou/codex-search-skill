@@ -17,7 +17,7 @@ Required:
 Optional:
 - MINERU_API_BASE (default: https://mineru.net)
 - MINERU_WORKSPACE / CODEX_WORKSPACE / AGENT_WORKSPACE:
-  workspace root for output (default: ~/.codex/workspace)
+  workspace root for output (default: $CODEX_HOME/workspace)
 """
 
 from __future__ import annotations
@@ -55,6 +55,16 @@ def _bootstrap_env() -> None:
     _load_dotenv(here.parent.parent / ".env")
 
 
+def _expand_path(value: str) -> pathlib.Path:
+    codex_home = os.environ.get("CODEX_HOME") or "~/.codex"
+    value = value.replace("${CODEX_HOME}", codex_home).replace("$CODEX_HOME", codex_home)
+    return pathlib.Path(os.path.expanduser(os.path.expandvars(value)))
+
+
+def _codex_home() -> pathlib.Path:
+    return _expand_path(os.environ.get("CODEX_HOME") or "~/.codex")
+
+
 def _default_workspace() -> pathlib.Path:
     for env_name in (
         "MINERU_WORKSPACE",
@@ -62,8 +72,8 @@ def _default_workspace() -> pathlib.Path:
         "AGENT_WORKSPACE",
     ):
         if v := os.environ.get(env_name):
-            return pathlib.Path(v)
-    return pathlib.Path.home() / ".codex" / "workspace"
+            return _expand_path(v)
+    return _codex_home() / "workspace"
 
 
 def _http_json(method: str, url: str, *, headers: dict[str, str] | None = None, payload: dict | None = None, timeout: int = 60) -> dict:

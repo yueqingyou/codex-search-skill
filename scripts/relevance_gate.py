@@ -31,6 +31,16 @@ from urllib.error import HTTPError
 DEFAULT_GROK_MODEL = "grok-4.5"
 
 
+def _expand_path(value: str) -> Path:
+    codex_home = os.environ.get("CODEX_HOME") or "~/.codex"
+    value = value.replace("${CODEX_HOME}", codex_home).replace("$CODEX_HOME", codex_home)
+    return Path(os.path.expanduser(os.path.expandvars(value)))
+
+
+def _codex_home() -> Path:
+    return _expand_path(os.environ.get("CODEX_HOME") or "~/.codex")
+
+
 def _safe_error_message(error: Exception, max_chars: int = 300) -> str:
     """Render LLM provider errors without leaking tokens."""
     text = str(error)
@@ -45,33 +55,40 @@ def _safe_error_message(error: Exception, max_chars: int = 300) -> str:
 # ---------------------------------------------------------------------------
 def _load_creds() -> dict:
     keys = {}
-    cred_path = Path.home() / ".codex" / "credentials" / "search.json"
-    try:
-        cred = json.loads(cred_path.read_text())
-        if grok := cred.get("grok"):
-            if isinstance(grok, dict):
-                keys["grok_url"] = (
-                    grok.get("apiUrl")
-                    or grok.get("api_url")
-                    or grok.get("baseUrl")
-                    or grok.get("base_url")
-                    or ""
-                )
-                keys["grok_key"] = grok.get("apiKey") or grok.get("api_key") or ""
-                keys["grok_model"] = (
-                    grok.get("model")
-                    or grok.get("model_id")
-                    or grok.get("search_model_id")
-                    or DEFAULT_GROK_MODEL
-                )
-                keys["grok_api_format"] = (
-                    grok.get("apiFormat")
-                    or grok.get("api_format")
-                    or grok.get("endpoint")
-                    or "responses"
-                )
-    except (json.JSONDecodeError, FileNotFoundError):
-        pass
+    cred_paths = []
+    for env_name in ("WEB_SEARCH_CREDENTIALS", "CODEX_SEARCH_CREDENTIALS"):
+        if v := os.environ.get(env_name):
+            cred_paths.append(_expand_path(v))
+    cred_paths.append(_codex_home() / "credentials" / "search.json")
+
+    for cred_path in cred_paths:
+        try:
+            cred = json.loads(cred_path.read_text())
+            if grok := cred.get("grok"):
+                if isinstance(grok, dict):
+                    keys["grok_url"] = (
+                        grok.get("apiUrl")
+                        or grok.get("api_url")
+                        or grok.get("baseUrl")
+                        or grok.get("base_url")
+                        or ""
+                    )
+                    keys["grok_key"] = grok.get("apiKey") or grok.get("api_key") or ""
+                    keys["grok_model"] = (
+                        grok.get("model")
+                        or grok.get("model_id")
+                        or grok.get("search_model_id")
+                        or DEFAULT_GROK_MODEL
+                    )
+                    keys["grok_api_format"] = (
+                        grok.get("apiFormat")
+                        or grok.get("api_format")
+                        or grok.get("endpoint")
+                        or "responses"
+                    )
+            break
+        except (json.JSONDecodeError, OSError):
+            pass
     # Env var overrides
     for env, key in [("GROK_API_KEY", "grok_key"), ("GROK_API_URL", "grok_url"),
                      ("GROK_MODEL", "grok_model"), ("GROK_API_FORMAT", "grok_api_format")]:
